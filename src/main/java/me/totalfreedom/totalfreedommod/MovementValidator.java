@@ -1,17 +1,16 @@
 package me.totalfreedom.totalfreedommod;
 
-import ca.momothereal.mojangson.ex.MojangsonParseException;
-import ca.momothereal.mojangson.value.MojangsonCompound;
-import ca.momothereal.mojangson.value.MojangsonValue;
+import com.google.common.collect.Multimap;
 import io.papermc.lib.PaperLib;
-import java.util.List;
+
+import java.util.Collection;
+import java.util.Map;
 import java.util.Objects;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.craftbukkit.v1_17_R1.inventory.CraftItemStack;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -20,9 +19,11 @@ import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
 public class MovementValidator extends FreedomService
 {
+
     public static final int MAX_XYZ_COORD = 29999998;
     public static final int MAX_DISTANCE_TRAVELED = 100;
 
@@ -132,55 +133,49 @@ public class MovementValidator extends FreedomService
 
     private Boolean exploitItem(ItemStack item)
     {
-        net.minecraft.world.item.ItemStack nmsStack = CraftItemStack.asNMSCopy(item);
-        NBTTagList modifiers = getAttributeList(nmsStack);
-        MojangsonCompound compound = new MojangsonCompound();
-        boolean foundNegative = false;
-        boolean foundPositive = false;
-        try
+        if (item == null)
         {
-            String mod = modifiers.toString();
-            String fancy = ("{" + (mod.substring(1, mod.length() - 1).replace("{", "").replace("}", "")) + "}");
-            compound.read(fancy);
-            for (String key : compound.keySet())
+            return false;
+        }
+
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null)
+        {
+            Multimap<Attribute, AttributeModifier> attributes = meta.getAttributeModifiers();
+            if (attributes != null)
             {
-                if (Objects.equals(key, "Amount")) //null-safe .equals()
+                Map<Attribute, Collection<AttributeModifier>> attrMap = attributes.asMap();
+
+                // For every attribute...
+                for (Attribute attr : attributes.keySet())
                 {
-                    @SuppressWarnings("rawtypes")
-                    List<MojangsonValue> values = compound.get(key);
-                    for (MojangsonValue<?> val : values)
+                    // Default values
+                    boolean posInf = false;
+                    boolean negInf = false;
+
+                    // For every AttributeModifier...
+                    for (AttributeModifier modifier : attrMap.get(attr))
                     {
-                        if (val.getValue().toString().equals("Infinityd"))
+                        // Are they ∞ or -∞?
+                        if (modifier.getAmount() == Double.POSITIVE_INFINITY)
                         {
-                            foundPositive = true;
+                            posInf = true;
                         }
-                        if (val.getValue().toString().equals("-Infinityd"))
+                        else if (modifier.getAmount() == Double.NEGATIVE_INFINITY)
                         {
-                            foundNegative = true;
+                            negInf = true;
                         }
+                    }
+
+                    // Are both values set as true?
+                    if (posInf && negInf)
+                    {
+                        return true;
                     }
                 }
             }
-        }
-        catch (MojangsonParseException e)
-        {
-            e.printStackTrace();
-        }
-        return foundNegative && foundPositive;
-    }
 
-
-    private NBTTagList getAttributeList(net.minecraft.world.item.ItemStack stack)
-    {
-        if (stack.getTag() == null)
-        {
-            stack.setTag(new NBTTagCompound());
         }
-        NBTTagList attr = stack.getTag().getList("AttributeModifiers", 10);
-        if (attr == null)
-        {
-            stack.getTag().set("AttributeModifiers", new NBTTagList());
-        }
-        return stack.getTag().getList("AttributeModifiers", 10);
+        return false;
     }
 }
